@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8080";
+const API_BASE = "http://154.36.170.122:8080";
 
 function getToken() {
   return localStorage.getItem("token") || "";
@@ -256,3 +256,4 @@ async function previewFile(id, originalName, mimeType) {
   const blob = await fetchBlobWithToken(`${API_BASE}/api/files/${id}/download`);
   openLightbox({ title: originalName, blob, mimeType });
 }
+
