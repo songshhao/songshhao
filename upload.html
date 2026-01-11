@@ -26,7 +26,7 @@
           支持多选 · 分片秒传 · 单文件最大 2GB
         </p>
       </div>
-      <a href="dashboard.html" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/60 hover:bg-white text-slate-600 hover:text-indigo-600 border border-white/60 shadow-sm transition-all text-sm font-medium">
+      <a href="index.html" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/60 hover:bg-white text-slate-600 hover:text-indigo-600 border border-white/60 shadow-sm transition-all text-sm font-medium">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         返回列表
       </a>
@@ -298,7 +298,7 @@
           setTotalProgress(100, "所有文件处理完毕");
           toast("所有文件上传完成", "ok");
           // 稍微延迟跳转，让用户看到绿条满了
-          setTimeout(() => location.href = "dashboard.html", 1000);
+          setTimeout(() => location.href = "index.html", 1000);
         }
       } finally {
         uploading = false;
