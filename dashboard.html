@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="./app.js"></script>
+  <title>文件列表 - PicVid</title>
+  <style>
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-700">
+  <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+    <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-200/40 blur-3xl"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-200/40 blur-3xl"></div>
+  </div>
+
+  <div class="max-w-7xl mx-auto p-4 sm:p-8">
+    <!-- 顶部栏 -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
+          我的文件
+        </h1>
+        <p class="text-slate-500 text-sm mt-1">
+          点击图片预览 · 支持多选下载（不打包）
+        </p>
+      </div>
+
+      <div class="flex flex-wrap gap-3 shrink-0 items-center">
+        <!-- 批量操作区 -->
+        <div class="flex items-center gap-2 bg-white/70 backdrop-blur-md border border-white/60 shadow-sm rounded-xl px-3 py-2">
+          <div class="text-xs text-slate-500">
+            已选 <span id="selCount" class="font-semibold text-indigo-600">0</span>
+          </div>
+          <button id="selectPage"
+            class="text-xs px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">
+            全选本页
+          </button>
+          <button id="clearSel"
+            class="text-xs px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors">
+            清空
+          </button>
+          <button id="dlSelected"
+            class="text-xs px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            下载已选
+          </button>
+          <button id="cancelBatch"
+            class="hidden text-xs px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors">
+            取消下载
+          </button>
+        </div>
+
+        <a href="upload.html"
+           class="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 text-sm font-medium shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5 active:translate-y-0">
+           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+           </svg>
+           上传文件
+        </a>
+
+        <button onclick="logout()"
+                class="rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 px-5 py-2.5 text-sm font-medium shadow-sm transition-colors">
+          退出
+        </button>
+      </div>
+    </div>
+
+    <!-- 网格 -->
+    <div id="grid" class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"></div>
+
+    <!-- 分页 -->
+    <div class="mt-10 flex flex-col sm:flex-row items-center justify-between text-sm text-slate-500 gap-4 bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-white/50 shadow-sm">
+      <div id="meta" class="font-medium"></div>
+      <div class="flex gap-2">
+        <button id="prev" class="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          上一页
+        </button>
+        <button id="next" class="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+          下一页
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    requireAuth();
+
+    let page = 1;
+    const pageSize = 20;
+    const thumbUrls = [];
+
+    // 多选集合（跨页保留选择也可以，这里默认“跨页保留”）
+    const selected = new Set();            // 存 id(string)
+    const fileMap = new Map();             // id(string) -> file obj
+    let currentPageIds = [];               // 本页有哪些 id
+    let batchCancel = false;
+    let batching = false;
+
+    const selCountEl = document.getElementById("selCount");
+    const dlSelectedBtn = document.getElementById("dlSelected");
+    const cancelBatchBtn = document.getElementById("cancelBatch");
+
+    function fmtSize(bytes) {
+      const units = ["B","KB","MB","GB","TB"];
+      let i = 0, v = bytes;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return v.toFixed(i === 0 ? 0 : 2) + " " + units[i];
+    }
+
+    function safeName(n){ return (n || "download").replace(/[\\/:*?"<>|]/g, "_"); }
+
+    function clearThumbUrls() {
+      while (thumbUrls.length) {
+        const u = thumbUrls.pop();
+        try { URL.revokeObjectURL(u); } catch (e) {}
+      }
+    }
+
+    function updateSelectedUI() {
+      selCountEl.textContent = selected.size;
+      dlSelectedBtn.disabled = selected.size === 0 || batching;
+
+      // 给本页已选卡片加 ring
+      document.querySelectorAll("[data-card-id]").forEach(card => {
+        const id = card.getAttribute("data-card-id");
+        if (selected.has(id)) {
+          card.classList.add("ring-2","ring-indigo-400");
+        } else {
+          card.classList.remove("ring-2","ring-indigo-400");
+        }
+      });
+    }
+
+    async function loadImageThumb(id, imgEl) {
+      try {
+        const blob = await fetchBlobWithToken(`${API_BASE}/api/files/${id}/download`);
+        const url = URL.createObjectURL(blob);
+        thumbUrls.push(url);
+        imgEl.src = url;
+        imgEl.onload = () => {
+          imgEl.classList.remove("opacity-0");
+          imgEl.classList.add("opacity-100");
+          imgEl.parentElement.querySelector('.loading-text')?.remove();
+        }
+      } catch (e) {}
+    }
+
+    async function batchDownloadSelected() {
+      if (selected.size === 0) return toast("先勾选要下载的文件", "info");
+      if (batching) return;
+
+      batching = true;
+      batchCancel = false;
+      dlSelectedBtn.disabled = true;
+      cancelBatchBtn.classList.remove("hidden");
+
+      const ids = Array.from(selected);
+
+      toast("开始批量下载（手机浏览器可能会拦截多文件下载）", "info");
+
+      for (let i = 0; i < ids.length; i++) {
+        if (batchCancel) break;
+
+        const id = ids[i];
+        const f = fileMap.get(id);
+        const name = f ? safeName(f.originalName) : ("file_" + id);
+
+        try {
+          await downloadWithToken(id, name);
+          // 小延迟，降低被浏览器判定为“自动弹窗/恶意下载”的概率
+          await new Promise(r => setTimeout(r, 250));
+        } catch (e) {
+          toast(`下载失败：${name} - ${e.message}`, "err");
+        }
+      }
+
+      batching = false;
+      cancelBatchBtn.classList.add("hidden");
+      dlSelectedBtn.disabled = selected.size === 0;
+      toast(batchCancel ? "已取消批量下载" : "批量下载完成", "ok");
+    }
+
+    document.getElementById("dlSelected").addEventListener("click", batchDownloadSelected);
+    document.getElementById("cancelBatch").addEventListener("click", () => { batchCancel = true; });
+
+    document.getElementById("selectPage").addEventListener("click", () => {
+      // 全选本页
+      currentPageIds.forEach(id => selected.add(id));
+      // 同步勾选框
+      currentPageIds.forEach(id => {
+        const ck = document.querySelector(`[data-ck="${id}"]`);
+        if (ck) ck.checked = true;
+      });
+      updateSelectedUI();
+    });
+
+    document.getElementById("clearSel").addEventListener("click", () => {
+      selected.clear();
+      document.querySelectorAll('[data-ck]').forEach(ck => ck.checked = false);
+      updateSelectedUI();
+    });
+
+    async function load() {
+      clearThumbUrls();
+      const grid = document.getElementById("grid");
+      grid.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400">加载中...</div>`;
+
+      try {
+        const data = await api(`/api/files?page=${page}&pageSize=${pageSize}`);
+        grid.innerHTML = "";
+
+        const items = data.items || [];
+        const total = data.total || 0;
+
+        document.getElementById("meta").textContent =
+          `第 ${page} 页 / 共 ${Math.ceil(total / pageSize) || 1} 页 · 总计 ${total} 项`;
+
+        document.getElementById("prev").disabled = page <= 1;
+        document.getElementById("next").disabled = page >= (Math.ceil(total / pageSize) || 1);
+
+        // 本页 id 列表
+        currentPageIds = items.map(f => String(f.id));
+
+        if (items.length === 0) {
+          grid.innerHTML = `
+            <div class="col-span-full flex flex-col items-center justify-center py-16 text-slate-400 bg-white/40 backdrop-blur-sm border border-white/50 rounded-3xl">
+              <p class="text-lg font-medium text-slate-500">暂无文件</p>
+              <p class="text-sm mt-1">点击右上角上传按钮添加新文件</p>
+            </div>`;
+          return;
+        }
+
+        for (const f of items) {
+          const idStr = String(f.id);
+          fileMap.set(idStr, f);
+
+          const isVideo = (f.mimeType || "").startsWith("video/");
+          const isImage = (f.mimeType || "").startsWith("image/");
+
+          let tagHtml = "";
+          if (isVideo) tagHtml = `<div class="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/80 text-white backdrop-blur-sm shadow-sm">VIDEO</div>`;
+          else if (isImage) tagHtml = `<div class="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/80 text-white backdrop-blur-sm shadow-sm">IMG</div>`;
+          else tagHtml = `<div class="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-500/80 text-white backdrop-blur-sm shadow-sm">FILE</div>`;
+
+          const card = document.createElement("div");
+          card.setAttribute("data-card-id", idStr);
+          card.className = "group relative flex flex-col rounded-2xl overflow-hidden bg-white/70 backdrop-blur-md border border-white/60 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300";
+
+          card.innerHTML = `
+            <div class="relative">
+              <!-- 勾选框：左上角（阻止冒泡，避免触发预览） -->
+              <label class="absolute top-2 left-2 z-10 flex items-center gap-2 px-2 py-1 rounded-xl bg-black/35 backdrop-blur-sm text-white select-none">
+                <input type="checkbox" class="w-4 h-4 accent-indigo-500" data-ck="${idStr}">
+                <span class="text-xs">选</span>
+              </label>
+
+              <button class="relative w-full aspect-square bg-slate-100 overflow-hidden cursor-zoom-in" data-preview="${idStr}">
+                <div class="loading-text absolute inset-0 flex items-center justify-center text-slate-400 text-xs">
+                  ${isImage ? '<svg class="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>' : ''}
+                </div>
+                <img class="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-500" />
+                <div class="absolute inset-0 bg-indigo-900/0 group-hover:bg-indigo-900/10 transition duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                  ${isVideo
+                    ? '<div class="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg"><svg class="w-5 h-5 text-indigo-600 ml-0.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" /></svg></div>'
+                    : ''
+                  }
+                </div>
+                ${tagHtml}
+              </button>
+            </div>
+
+            <div class="p-4 flex-1 flex flex-col">
+              <div class="mb-1">
+                <div class="text-sm font-semibold text-slate-700 truncate" title="${f.originalName}">${f.originalName}</div>
+                <div class="text-xs text-slate-400 font-mono mt-0.5">${fmtSize(f.sizeBytes)}</div>
+              </div>
+
+              <!-- 桌面 hover 操作区 -->
+              <div class="mt-auto pt-3 flex items-center justify-between gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-y-2 group-hover:translate-y-0">
+                <button class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-xs font-medium transition-colors"
+                        data-dl="${idStr}" data-name="${f.originalName}">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                  下载
+                </button>
+                <button class="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 text-xs font-medium transition-colors"
+                        data-del="${idStr}">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                  删除
+                </button>
+              </div>
+
+              <!-- 手机常驻操作区（注意：同样有 data-dl/data-del，需要全部绑定） -->
+              <div class="sm:hidden mt-3 flex gap-2">
+                <button class="flex-1 py-1.5 text-xs bg-slate-100 rounded text-slate-700" data-dl="${idStr}" data-name="${f.originalName}">下载</button>
+                <button class="flex-1 py-1.5 text-xs bg-slate-100 rounded text-red-500" data-del="${idStr}">删除</button>
+              </div>
+            </div>
+          `;
+
+          const img = card.querySelector("img");
+          const loadingText = card.querySelector(".loading-text");
+
+          if (isImage) {
+            await loadImageThumb(idStr, img);
+          } else {
+            loadingText.innerHTML = `<svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 2H7a2 2 0 00-2 2v15a2 2 0 002 2z"></path></svg>`;
+          }
+
+          // 勾选框：阻止冒泡，避免打开预览
+          const ck = card.querySelector(`[data-ck="${idStr}"]`);
+          ck.checked = selected.has(idStr);
+          ck.addEventListener("click", (ev) => ev.stopPropagation());
+          ck.addEventListener("change", (ev) => {
+            if (ev.target.checked) selected.add(idStr);
+            else selected.delete(idStr);
+            updateSelectedUI();
+          });
+
+          // 预览
+          card.querySelector(`[data-preview="${idStr}"]`).addEventListener("click", async () => {
+            try { await previewFile(idStr, f.originalName, f.mimeType); }
+            catch (e) { toast(e.message, "err"); }
+          });
+
+          // ✅ 下载按钮：同卡片可能有两处（hover + 手机常驻），所以必须 querySelectorAll 全绑定
+          card.querySelectorAll(`[data-dl="${idStr}"]`).forEach(btn => {
+            btn.addEventListener("click", async (ev) => {
+              ev.stopPropagation();
+              try { await downloadWithToken(idStr, safeName(f.originalName)); }
+              catch (e) { toast(e.message, "err"); }
+            });
+          });
+
+          // ✅ 删除按钮：同理全绑定
+          card.querySelectorAll(`[data-del="${idStr}"]`).forEach(btn => {
+            btn.addEventListener("click", async (ev) => {
+              ev.stopPropagation();
+              if (!confirm("确定要删除这个文件吗？")) return;
+              try {
+                await api(`/api/files/${idStr}`, { method: "DELETE" });
+                selected.delete(idStr);
+                toast("删除成功", "ok");
+                await load();
+                updateSelectedUI();
+              } catch (e) {
+                toast(e.message, "err");
+              }
+            });
+          });
+
+          grid.appendChild(card);
+        }
+
+        updateSelectedUI();
+      } catch (e) {
+        console.error(e);
+        toast(e.message || "加载失败", "err");
+        if (String(e.message).includes("401") || String(e.message).includes("未登录")) logout();
+      }
+    }
+
+    document.getElementById("prev").addEventListener("click", () => { page = Math.max(1, page - 1); load(); });
+    document.getElementById("next").addEventListener("click", () => { page = page + 1; load(); });
+
+    load();
+  </script>
+</body>
+</html>
