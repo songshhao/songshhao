@@ -1,4 +1,4 @@
-const API_BASE = "https://65433ad7.r23.cpolar.top";
+const API_BASE = "https://59df1916.r9.cpolar.cn";
 
 function getToken() {
   return localStorage.getItem("token") || "";
@@ -256,6 +256,7 @@ async function previewFile(id, originalName, mimeType) {
   const blob = await fetchBlobWithToken(`${API_BASE}/api/files/${id}/download`);
   openLightbox({ title: originalName, blob, mimeType });
 }
+
 
 
 
