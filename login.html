@@ -93,7 +93,7 @@
         if (typeof toast === 'function') toast("登录成功", "ok");
         
         // 稍微延迟跳转，让用户看到成功提示
-        setTimeout(() => location.href = "dashboard.html", 400);
+        setTimeout(() => location.href = "index.html", 400);
 
       } catch (e) {
         if (typeof toast === 'function') toast(e.message, "err");
