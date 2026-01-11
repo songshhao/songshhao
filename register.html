@@ -100,7 +100,7 @@
   
         setToken(data.token);
         if (typeof toast === 'function') toast("注册成功，正在跳转...", "ok");
-        setTimeout(() => location.href = "dashboard.html", 800);
+        setTimeout(() => location.href = "index.html", 800);
   
       } catch (e) {
         if (typeof toast === 'function') toast(e.message, "err");
