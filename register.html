@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="./app.js"></script>
+  <title>注册 - PicVid</title>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+
+  <div class="absolute top-0 left-0 w-full h-full -z-10 pointer-events-none">
+    <div class="absolute top-[15%] right-[25%] w-72 h-72 rounded-full bg-indigo-300/30 blur-3xl animate-pulse"></div>
+    <div class="absolute bottom-[15%] left-[25%] w-80 h-80 rounded-full bg-blue-300/30 blur-3xl"></div>
+  </div>
+
+  <div class="w-full max-w-md bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl p-8 shadow-2xl shadow-indigo-100/50 transition-all hover:shadow-indigo-200/50 duration-500">
+    
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
+        创建账号
+      </h1>
+      <p class="text-slate-500 text-sm mt-2">
+        注册 PicVid，开启您的云端存储之旅
+      </p>
+    </div>
+
+    <div class="space-y-5">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1.5 ml-1">用户名</label>
+        <input id="username" 
+               type="text" 
+               placeholder="设置一个用户名"
+               class="w-full rounded-xl bg-white/50 border border-slate-200 px-4 py-3 text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+      </div>
+      
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1.5 ml-1">密码</label>
+        <input id="password" 
+               type="password" 
+               placeholder="设置登录密码"
+               class="w-full rounded-xl bg-white/50 border border-slate-200 px-4 py-3 text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-1.5 ml-1">
+           <label class="block text-sm font-medium text-slate-700">邮箱</label>
+           <span class="text-xs text-slate-400">可选</span>
+        </div>
+        <input id="email" 
+               type="email" 
+               placeholder="example@email.com"
+               class="w-full rounded-xl bg-white/50 border border-slate-200 px-4 py-3 text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10" />
+      </div>
+
+      <button id="btn" class="w-full mt-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3.5 font-bold shadow-lg shadow-indigo-500/30 transition-all hover:-translate-y-0.5 active:translate-y-0 active:shadow-none">
+        立即注册并登录
+      </button>
+
+      <div class="text-center text-sm text-slate-500 mt-6">
+        已经有账号了？
+        <a class="text-indigo-600 font-semibold hover:text-indigo-700 hover:underline decoration-2 underline-offset-4 transition-all" href="login.html">
+          直接登录
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter') document.getElementById('btn').click();
+    });
+  
+    document.getElementById("btn").addEventListener("click", async () => {
+      const btn = document.getElementById("btn");
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const email = document.getElementById("email").value.trim();
+  
+      if(!username || !password) {
+        typeof toast === 'function' ? toast("请填写用户名和密码", "err") : alert("请填写用户名和密码");
+        return;
+      }
+  
+      const originalText = btn.innerText;
+      btn.innerText = "注册中...";
+      btn.disabled = true;
+      btn.classList.add("opacity-70", "cursor-not-allowed");
+  
+      try {
+        // ✅ 邮箱为空就不传，避免 UNIQUE(email) 冲突
+        const payload = { username, password };
+        if (email) payload.email = email; // 只有非空才带
+  
+        const data = await api("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+  
+        setToken(data.token);
+        if (typeof toast === 'function') toast("注册成功，正在跳转...", "ok");
+        setTimeout(() => location.href = "dashboard.html", 800);
+  
+      } catch (e) {
+        if (typeof toast === 'function') toast(e.message, "err");
+        else alert(e.message);
+  
+        btn.innerText = originalText;
+        btn.disabled = false;
+        btn.classList.remove("opacity-70", "cursor-not-allowed");
+      }
+    });
+  </script>
+
+</body>
+</html>

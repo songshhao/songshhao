@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="./app.js"></script>
+  <title>上传 - PicVid</title>
+</head>
+
+<body class="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-indigo-100 selection:text-indigo-700 relative overflow-x-hidden">
+
+  <div class="fixed top-0 left-0 w-full h-full -z-10 pointer-events-none">
+    <div class="absolute top-[-10%] right-[-5%] w-[40%] h-[40%] rounded-full bg-indigo-200/40 blur-3xl"></div>
+    <div class="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-blue-200/40 blur-3xl"></div>
+  </div>
+
+  <div class="max-w-4xl mx-auto p-4 sm:p-8">
+    
+    <div class="flex items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
+          上传文件
+        </h1>
+        <p class="text-slate-500 text-sm mt-1">
+          支持多选 · 分片秒传 · 单文件最大 2GB
+        </p>
+      </div>
+      <a href="dashboard.html" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/60 hover:bg-white text-slate-600 hover:text-indigo-600 border border-white/60 shadow-sm transition-all text-sm font-medium">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        返回列表
+      </a>
+    </div>
+
+    <div class="bg-white/70 backdrop-blur-xl border border-white/60 rounded-3xl p-6 sm:p-8 shadow-xl shadow-indigo-100/50">
+      
+      <div class="relative group">
+        <input id="file" type="file" multiple
+          class="block w-full text-sm text-slate-500
+          file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0
+          file:text-sm file:font-semibold
+          file:bg-indigo-50 file:text-indigo-700
+          hover:file:bg-indigo-100
+          cursor-pointer
+          border border-dashed border-slate-300 rounded-2xl p-8 text-center
+          hover:border-indigo-400 hover:bg-white/50 transition-all
+          focus:outline-none" 
+        />
+        <div class="absolute inset-0 pointer-events-none flex items-center justify-center opacity-0 group-hover:opacity-10 pointer-events-none">
+             </div>
+      </div>
+
+      <div class="mt-6 flex gap-3">
+        <button id="start" class="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 text-sm font-bold shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5 active:translate-y-0">
+          开始上传
+        </button>
+        <button id="cancel" class="rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 px-6 py-3 text-sm font-medium transition-colors">
+          取消
+        </button>
+      </div>
+
+      <div class="mt-8 bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
+        <div class="flex items-center justify-between text-sm mb-2">
+          <span id="status" class="font-medium text-slate-700">准备就绪</span>
+          <span id="percent" class="font-bold text-indigo-600">0%</span>
+        </div>
+        <div class="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+          <div id="bar" class="h-full bg-gradient-to-r from-indigo-500 to-blue-500 transition-all duration-300 ease-out" style="width:0%"></div>
+        </div>
+        <div class="mt-2 text-xs text-slate-400 text-right font-mono" id="detail">等待选择文件...</div>
+      </div>
+    </div>
+
+    <div class="mt-8">
+      <div class="flex items-center gap-2 text-sm font-bold text-slate-600 mb-4 px-2">
+        <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+        任务队列
+      </div>
+      <div id="queue" class="space-y-3 pb-12"></div>
+    </div>
+  </div>
+
+  <script>
+    requireAuth();
+
+    const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
+    const MAX_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+
+    let abortFlag = false;
+    let uploading = false;
+
+    const statusEl = document.getElementById("status");
+    const percentEl = document.getElementById("percent");
+    const barEl = document.getElementById("bar");
+    const detailEl = document.getElementById("detail");
+    const queueEl = document.getElementById("queue");
+
+    function fmtSize(bytes) {
+      const units = ["B","KB","MB","GB","TB"];
+      let i = 0, v = bytes;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return v.toFixed(i === 0 ? 0 : 2) + " " + units[i];
+    }
+
+    function setTotalProgress(pct, detail) {
+      pct = Math.max(0, Math.min(100, Math.floor(pct)));
+      percentEl.textContent = pct + "%";
+      barEl.style.width = pct + "%";
+      if (detail !== undefined) detailEl.textContent = detail;
+    }
+
+    // 修改：生成亮色风格的列表项
+    function createQueueItem(file, index) {
+      const row = document.createElement("div");
+      // Glassy list item
+      row.className = "bg-white/60 hover:bg-white/80 backdrop-blur-md border border-white/50 rounded-xl p-4 transition-all duration-300 shadow-sm hover:shadow-md";
+
+      row.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0">
+               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 2H7a2 2 0 00-2 2v15a2 2 0 002 2z"></path></svg>
+            </div>
+            <div>
+              <div class="text-sm font-semibold text-slate-700 truncate max-w-[200px] sm:max-w-md" title="${file.name}">${file.name}</div>
+              <div class="text-xs text-slate-400 mt-0.5 font-mono">${fmtSize(file.size)}</div>
+            </div>
+          </div>
+          <div class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500" data-tag="state">等待</div>
+        </div>
+
+        <div class="mt-4">
+          <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full bg-indigo-500 transition-all duration-300" data-tag="bar" style="width:0%"></div>
+          </div>
+          <div class="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between font-mono">
+            <span data-tag="sub">0%</span>
+            <span data-tag="extra"></span>
+          </div>
+        </div>
+      `;
+
+      return row;
+    }
+
+    function setItemState(row, state, extra) {
+      const stateEl = row.querySelector('[data-tag="state"]');
+      const extraEl = row.querySelector('[data-tag="extra"]');
+      stateEl.textContent = state;
+      extraEl.textContent = extra || "";
+
+      // 修改：状态颜色适配亮色主题
+      let colorClass = "bg-slate-100 text-slate-500"; // 默认
+      
+      if (state === "上传中") colorClass = "bg-indigo-100 text-indigo-600 animate-pulse";
+      else if (state === "完成") colorClass = "bg-emerald-100 text-emerald-600";
+      else if (state === "失败") colorClass = "bg-red-100 text-red-600";
+      else if (state === "取消") colorClass = "bg-slate-200 text-slate-600";
+
+      stateEl.className = `text-xs font-bold px-2.5 py-1 rounded-lg ${colorClass} transition-colors`;
+    }
+
+    function setItemProgress(row, pct) {
+      pct = Math.max(0, Math.min(100, Math.floor(pct)));
+      row.querySelector('[data-tag="bar"]').style.width = pct + "%";
+      row.querySelector('[data-tag="sub"]').textContent = pct + "%";
+    }
+
+    document.getElementById("cancel").addEventListener("click", () => {
+      abortFlag = true;
+      if(uploading) toast("正在取消任务...", "info");
+    });
+
+    async function uploadSingleFile(file, row, fileIndex, totalFiles) {
+      if (file.size > MAX_SIZE) {
+        setItemState(row, "失败", "超过 2GB");
+        throw new Error(`文件超过2GB限制：${file.name}`);
+      }
+
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+      // 1) init
+      setItemState(row, "上传中", "初始化...");
+      statusEl.textContent = `正在初始化：${file.name}`;
+      detailEl.textContent = `当前队列：${fileIndex + 1} / ${totalFiles}`;
+
+      const init = await api("/api/upload/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileSize: file.size,
+          chunkSize: CHUNK_SIZE,
+          totalChunks
+        })
+      });
+
+      const uploadId = init.uploadId;
+      setItemState(row, "上传中", "检查断点...");
+      row.querySelector('[data-tag="extra"]').textContent = `ID: ${uploadId.slice(-6)}`;
+
+      // 2) status
+      const uploaded = await api(`/api/upload/status?uploadId=${uploadId}`);
+      const uploadedSet = new Set(uploaded);
+
+      let doneChunks = uploadedSet.size;
+      setItemProgress(row, (doneChunks / totalChunks) * 100);
+
+      // 3) chunk loop
+      for (let i = 0; i < totalChunks; i++) {
+        if (abortFlag) {
+          setItemState(row, "取消");
+          throw new Error("用户取消");
+        }
+        if (uploadedSet.has(i)) continue;
+
+        setItemState(row, "上传中", `分片 ${i + 1}/${totalChunks}`);
+        statusEl.textContent = `正在传输：${file.name}`;
+        
+        // 计算总体进度
+        const overallPct = ((fileIndex + (doneChunks / totalChunks)) / totalFiles) * 100;
+        setTotalProgress(overallPct, `正在处理第 ${fileIndex + 1} 个文件，共 ${totalFiles} 个`);
+
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const blob = file.slice(start, end);
+
+        const form = new FormData();
+        form.append("uploadId", uploadId);
+        form.append("chunkIndex", String(i));
+        form.append("chunk", blob, file.name + `.part${i}`);
+
+        await api("/api/upload/chunk", { method: "POST", body: form });
+
+        doneChunks++;
+        setItemProgress(row, (doneChunks / totalChunks) * 100);
+      }
+
+      // 4) complete
+      if (abortFlag) {
+        setItemState(row, "取消");
+        throw new Error("用户取消");
+      }
+
+      setItemState(row, "上传中", "正在合并...");
+      statusEl.textContent = `合并文件：${file.name}`;
+
+      const complete = await api(`/api/upload/complete?uploadId=${uploadId}`, { method: "POST" });
+      setItemState(row, "完成", `大小: ${fmtSize(file.size)}`);
+      setItemProgress(row, 100);
+
+      return complete.fileId;
+    }
+
+    document.getElementById("start").addEventListener("click", async () => {
+      if (uploading) return toast("已有任务正在进行中", "info");
+      abortFlag = false;
+      uploading = true;
+
+      const input = document.getElementById("file");
+      const files = Array.from(input.files || []);
+      if (files.length === 0) { uploading = false; return toast("请先选择要上传的文件", "err"); }
+
+      // 重建队列 UI
+      queueEl.innerHTML = "";
+      const rows = files.map((f, i) => {
+        const r = createQueueItem(f, i);
+        queueEl.appendChild(r);
+        return r;
+      });
+
+      statusEl.textContent = "准备开始上传...";
+      setTotalProgress(0, `共 ${files.length} 个文件`);
+
+      try {
+        for (let i = 0; i < files.length; i++) {
+          if (abortFlag) {
+            statusEl.textContent = "上传已取消";
+            setTotalProgress(0, "操作被中止");
+            break;
+          }
+
+          const file = files[i];
+          const row = rows[i];
+
+          try {
+            await uploadSingleFile(file, row, i, files.length);
+            // toast(`完成：${file.name}`, "ok"); // 避免弹窗太多，这里可以注释掉
+          } catch (e) {
+            if (abortFlag) break;
+            setItemState(row, "失败", "Error");
+            toast(`${file.name} 上传失败：${e.message}`, "err");
+          }
+        }
+
+        if (!abortFlag) {
+          statusEl.textContent = "全部完成";
+          setTotalProgress(100, "所有文件处理完毕");
+          toast("所有文件上传完成", "ok");
+          // 稍微延迟跳转，让用户看到绿条满了
+          setTimeout(() => location.href = "dashboard.html", 1000);
+        }
+      } finally {
+        uploading = false;
+      }
+    });
+  </script>
+</body>
+</html>
